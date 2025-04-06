@@ -19,7 +19,7 @@ print(f"Using device: {device}")
 # SynthID Text configuration
 watermarking_config = SynthIDTextWatermarkingConfig(
     keys=[654, 400, 836, 123, 340, 443, 597, 160, 57, 589, 796, 896, 521, 145, 654, 400, 836, 123, 36, 443, 597, 13, 325, 971, 734, 886, 361, 145],
-    ngram_len=20,
+    ngram_len=5,
 )
 
 # Determine torch dtype based on device and capabilities
@@ -68,7 +68,7 @@ print("Model loaded successfully.")
 # **Crucial for Instruct models**: Use the specific chat template!
 def generate_responses(user_prompt: str):
     messages = [
-        {"role": "system", "content": "You are a helpful AI assistant. Always try to response in a useful, but brief way"},
+        {"role": "system", "content": "You are a helpful AI assistant. Respond to the user in 5-10 lines."},
         {"role": "user", "content": user_prompt}
     ]
 
@@ -88,16 +88,7 @@ def generate_responses(user_prompt: str):
 
     # 5. Generate Text
     print("Generating response...")
-    # Set generation parameters
-    generation_config = {
-        "max_new_tokens": 1000,  # Limit the length of the response
-        "do_sample": True,      # Use sampling for more creative/varied output
-        "temperature": 0.6,     # Controls randomness (lower = more deterministic)
-        "top_p": 0.9,           # Nucleus sampling: considers tokens cumulative probability > top_p
-        "eos_token_id": tokenizer.eos_token_id, # Stop generation at EOS token
-        "pad_token_id": tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id, # Prevent warnings
-        "watermarking_config":watermarking_config
-    }
+
 
 
     selection_for_watermark = random.choice([0, 1, 2, 3])
@@ -108,9 +99,25 @@ def generate_responses(user_prompt: str):
     print(f"--------------------------\nCorrect choice: {selection_for_watermark}\n---------------------------")
     for i in range(4):
         if i == selection_for_watermark:
-            generation_config["watermarking_config"] = watermarking_config
+            # Set generation parameters
+            generation_config = {
+                "max_new_tokens": 1000,  # Limit the length of the response
+                "do_sample": True,      # Use sampling for more creative/varied output
+                "temperature": 0.6,     # Controls randomness (lower = more deterministic)
+                "top_p": 0.9,           # Nucleus sampling: considers tokens cumulative probability > top_p
+                "eos_token_id": tokenizer.eos_token_id, # Stop generation at EOS token
+                "pad_token_id": tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id, # Prevent warnings
+                "watermarking_config":watermarking_config
+    }
         else:
-            generation_config.pop("watermarking_config", False)
+            generation_config = {
+                "max_new_tokens": 1000,  # Limit the length of the response
+                "do_sample": True,      # Use sampling for more creative/varied output
+                "temperature": 0.6,     # Controls randomness (lower = more deterministic)
+                "top_p": 0.9,           # Nucleus sampling: considers tokens cumulative probability > top_p
+                "eos_token_id": tokenizer.eos_token_id, # Stop generation at EOS token
+                "pad_token_id": tokenizer.pad_token_id if tokenizer.pad_token_id is not None else tokenizer.eos_token_id, # Prevent warnings
+            }
         # Generate output token IDs
         # Use torch.no_grad() to save memory during inference
         with torch.no_grad():

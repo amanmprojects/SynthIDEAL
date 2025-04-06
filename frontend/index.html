@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LLM Prompt</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdn.jsdelivr.net/npm/shadcn-ui@latest/dist/shadcn-ui.min.css" rel="stylesheet">
+    <style>
+        input:focus {
+            outline: none;
+            border-color: #4F46E5; /* Indigo color */
+            box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.3);
+        }
+
+        .choice-box {
+            display: block;
+            padding: 10px;
+            border: 2px solid #e5e7eb; /* Light gray */
+            border-radius: 8px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+        }
+
+        .choice-box:hover {
+            background-color: #f3f4f6; /* Slightly darker gray */
+            border-color: #4F46E5; /* Indigo */
+        }
+
+        .choice-box input {
+            display: none;
+        }
+
+        .choice-box.selected {
+            background-color: #e0e7ff; /* Light indigo */
+            border-color: #4F46E5; /* Indigo */
+        }
+
+        .choices-grid {
+            /* display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 16px; */
+            display: block; /* Revert to block layout for list view */
+        }
+
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+            display: none; /* Hidden by default */
+        }
+
+        .spinner-border {
+            border: 4px solid rgba(0, 0, 0, 0.1); /* Light gray border */
+            border-top: 4px solid #4F46E5; /* Indigo border for the top */
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% {
+                transform: rotate(0deg);
+            }
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-900 font-sans">
+    <div class="container mx-auto py-10">
+        <h1 class="text-3xl font-bold mb-6">Can you detect the Watermarked text?</h1>
+
+        <form id="promptForm" class="space-y-4 bg-white p-6 rounded-lg shadow-md">
+            <div>
+                <label for="prompt" class="block text-sm font-medium text-gray-700">Enter your prompt:</label>
+                <input type="text" id="prompt" name="prompt" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500">
+            </div>
+            <button type="submit" class="w-full bg-indigo-600 text-white py-2 px-4 rounded-md hover:bg-indigo-700">Submit</button>
+        </form>
+
+        <div id="responseContainer" class="mt-8 hidden bg-white p-6 rounded-lg shadow-md">
+            <h2 class="text-xl font-semibold mb-4">Choose the correct response:</h2>
+            <form id="responseForm" class="space-y-4">
+                <div id="choices" class="space-y-2"></div>
+                <button type="submit" class="w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700">Submit Choice</button>
+            </form>
+        </div>
+
+        <div id="resultContainer" class="mt-8 hidden p-4 rounded-lg shadow-md text-white"></div>
+
+        <button id="tryAgainButton" class="w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 mt-4 hidden">Let's Try Again</button>
+    </div>
+
+    <div id="loadingOverlay" class="loading-overlay">
+        <div class="spinner-border animate-spin inline-block w-8 h-8 border-4 rounded-full text-indigo-600"></div>
+    </div>
+
+    <div id="successRateContainer" class="fixed bottom-4 right-4 bg-gray-800 text-white py-2 px-4 rounded-md shadow-md text-sm hidden">
+        Success Rate: <span id="successRate">0%</span>
+    </div>
+
+    <!-- Add a button to clear the success rate -->
+    <div class="fixed bottom-4 left-4">
+        <button id="clearSuccessRateButton" class="bg-red-600 text-white py-2 px-4 rounded-md hover:bg-red-700">
+            Clear Success Rate
+        </button>
+    </div>
+
+    <script>
+        const promptForm = document.getElementById('promptForm');
+        const responseContainer = document.getElementById('responseContainer');
+        const choicesContainer = document.getElementById('choices');
+        const responseForm = document.getElementById('responseForm');
+        const resultContainer = document.getElementById('resultContainer');
+        const tryAgainButton = document.getElementById('tryAgainButton');
+        const loadingOverlay = document.getElementById('loadingOverlay');
+        const successRateContainer = document.getElementById('successRateContainer');
+        const successRateDisplay = document.getElementById('successRate');
+
+        let watermarkedChoice = null;
+        let totalGuesses = 0;
+        let correctGuesses = 0;
+
+        // Load success rate from localStorage on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            const savedTotalGuesses = localStorage.getItem('totalGuesses');
+            const savedCorrectGuesses = localStorage.getItem('correctGuesses');
+
+            if (savedTotalGuesses && savedCorrectGuesses) {
+                totalGuesses = parseInt(savedTotalGuesses, 10);
+                correctGuesses = parseInt(savedCorrectGuesses, 10);
+                updateSuccessRate();
+            }
+
+            const promptInput = document.getElementById('prompt');
+            promptInput.focus(); // Automatically focus the input on page load
+
+            promptInput.addEventListener('keypress', (event) => {
+                if (event.key === 'Enter') {
+                    event.preventDefault(); // Prevent default form submission
+                    document.getElementById('promptForm').dispatchEvent(new Event('submit')); // Trigger form submission
+                }
+            });
+        });
+
+        function updateSuccessRate() {
+            const successRate = totalGuesses > 0 ? Math.round((correctGuesses / totalGuesses) * 100) : 0;
+            successRateDisplay.textContent = `${successRate}%`;
+            successRateContainer.classList.remove('hidden');
+
+            // Save success rate to localStorage
+            localStorage.setItem('totalGuesses', totalGuesses);
+            localStorage.setItem('correctGuesses', correctGuesses);
+        }
+
+        choicesContainer.addEventListener('click', (event) => {
+            const choiceBox = event.target.closest('.choice-box');
+            if (!choiceBox) return;
+
+            // Deselect all other choices
+            document.querySelectorAll('.choice-box').forEach(box => box.classList.remove('selected'));
+
+            // Select the clicked choice
+            choiceBox.classList.add('selected');
+            choiceBox.querySelector('input').checked = true;
+        });
+
+        promptForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const prompt = document.getElementById('prompt').value;
+
+            // Clear the text box for new input
+            document.getElementById('prompt').value = '';
+
+            // Re-enable the "Submit Choice" button
+            const submitButton = responseForm.querySelector('button[type="submit"]');
+            submitButton.disabled = false;
+            submitButton.classList.remove('opacity-50', 'cursor-not-allowed');
+
+            // Show loading overlay
+            loadingOverlay.style.display = 'flex';
+
+            // Send the prompt to the backend
+            const response = await fetch('http://127.0.0.1:8000/ask', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ text: prompt }),
+            });
+
+            const data = await response.json();
+
+            // Hide loading overlay
+            loadingOverlay.style.display = 'none';
+
+            // Display the choices
+            watermarkedChoice = data.watermarked_choice;
+            choicesContainer.innerHTML = '';
+            choicesContainer.className = 'choices-grid'; // Apply grid layout
+            data.choices.forEach((choice, index) => {
+                const label = document.createElement('label');
+                label.className = 'choice-box';
+
+                const input = document.createElement('input');
+                input.type = 'radio';
+                input.name = 'choice';
+                input.value = index;
+
+                label.appendChild(input);
+                label.appendChild(document.createTextNode(choice));
+                choicesContainer.appendChild(label);
+            });
+
+            responseContainer.classList.remove('hidden');
+            resultContainer.classList.add('hidden'); // Hide the result container for the new prompt
+        });
+
+        responseForm.addEventListener('submit', (event) => {
+            event.preventDefault();
+            const selectedChoice = document.querySelector('input[name="choice"]:checked');
+
+            if (!selectedChoice) {
+                alert('Please select a choice!');
+                return;
+            }
+
+            const userChoice = parseInt(selectedChoice.value, 10);
+
+            // Update guesses
+            totalGuesses++;
+            if (userChoice === watermarkedChoice) {
+                correctGuesses++;
+            }
+
+            // Update success rate
+            updateSuccessRate();
+
+            // Disable the submit button
+            const submitButton = responseForm.querySelector('button[type="submit"]');
+            submitButton.disabled = true;
+            submitButton.classList.add('opacity-50', 'cursor-not-allowed');
+
+            // Show result
+            resultContainer.classList.remove('hidden');
+            if (userChoice === watermarkedChoice) {
+                resultContainer.textContent = 'Correct! You selected the watermarked response.';
+                resultContainer.className = 'mt-8 p-4 rounded-lg shadow-md text-white bg-green-600';
+            } else {
+                resultContainer.textContent = 'Incorrect. The watermarked response was choice ' + (watermarkedChoice + 1) + '.';
+                resultContainer.className = 'mt-8 p-4 rounded-lg shadow-md text-white bg-red-600';
+            }
+        });
+
+        tryAgainButton.addEventListener('click', () => {
+            // Reset the UI for a new attempt
+            document.getElementById('prompt').value = '';
+            responseContainer.classList.add('hidden');
+            resultContainer.classList.add('hidden');
+            tryAgainButton.classList.add('hidden');
+
+            // Re-enable the submit button
+            const submitButton = responseForm.querySelector('button[type="submit"]');
+            submitButton.disabled = false;
+            submitButton.classList.remove('opacity-50', 'cursor-not-allowed');
+        });
+
+        // Add a function to clear the success rate
+        const clearSuccessRateButton = document.getElementById('clearSuccessRateButton');
+
+        clearSuccessRateButton.addEventListener('click', () => {
+            // Clear localStorage values
+            localStorage.removeItem('totalGuesses');
+            localStorage.removeItem('correctGuesses');
+
+            // Reset variables and update the UI
+            totalGuesses = 0;
+            correctGuesses = 0;
+            updateSuccessRate();
+
+            alert('Success rate has been cleared!');
+        });
+    </script>
+</body>
+</html>
