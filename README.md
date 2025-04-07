@@ -13,8 +13,8 @@ This project provides a FastAPI backend to detect SynthID watermarks in text gen
 
 1.  **Clone the Repository:**
     ```bash
-    git clone [Your Repository URL]
-    cd [Your Repository Name]
+    git clone https://github.com/amanmprojects/SynthIDEAL.git
+    cd SynthIDEAL
     ```
 
 2.  **Create and Activate Virtual Environment:**
